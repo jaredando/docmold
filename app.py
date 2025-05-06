@@ -2,62 +2,49 @@ import streamlit as st
 from docx import Document
 from io import BytesIO
 
-def extract_paragraph_style(paragraph):
-    style = {
-        "font_name": paragraph.style.font.name,
-        "font_size": paragraph.style.font.size.pt if paragraph.style.font.size else 11,
-        "bold": paragraph.style.font.bold,
-        "italic": paragraph.style.font.italic,
-        "alignment": paragraph.alignment
-    }
-    return style
+def strip_docx_content(docx_file):
+    # Load the uploaded .docx file
+    doc = Document(docx_file)
+    
+    # Replace paragraph text with "[Blank]"
+    for para in doc.paragraphs:
+        if para.text.strip():  # Skip truly empty paragraphs
+            for run in para.runs:
+                run.text = "[Blank]"
 
-def apply_style_to_paragraph(paragraph, style):
-    run = paragraph.add_run()
-    font = run.font
-    font.name = style["font_name"]
-    font.size = style["font_size"]
-    font.bold = style["bold"]
-    font.italic = style["italic"]
-    paragraph.alignment = style["alignment"]
-    return run
+    # Replace table cell content with "[Blank]"
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                for para in cell.paragraphs:
+                    if para.text.strip():
+                        for run in para.runs:
+                            run.text = "[Blank]"
 
-def main():
-    st.title("📝 AI Word Template Formatter")
+    return doc
 
-    template_file = st.file_uploader("Upload Template Word Document (.docx)", type=["docx"])
-    content_file = st.file_uploader("Upload New Content (Text or Word)", type=["docx", "txt"])
+def save_docx_to_bytes(doc):
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
 
-    if template_file and content_file:
-        # Extract style from first paragraph of template
-        template_doc = Document(template_file)
-        if not template_doc.paragraphs:
-            st.error("Template document has no paragraphs.")
-            return
-        style = extract_paragraph_style(template_doc.paragraphs[0])
+# Streamlit UI
+st.title("DocMold - Strip and Preserve Layout")
 
-        # Load content
-        if content_file.name.endswith(".txt"):
-            raw_text = content_file.read().decode("utf-8")
-            content_lines = raw_text.strip().split("\n")
-        else:
-            new_doc = Document(content_file)
-            content_lines = [p.text for p in new_doc.paragraphs if p.text.strip()]
+uploaded_file = st.file_uploader("Upload a DOCX template", type=["docx"])
 
-        # Create new formatted document
-        final_doc = Document()
-        for line in content_lines:
-            p = final_doc.add_paragraph()
-            run = apply_style_to_paragraph(p, style)
-            run.text = line
+if uploaded_file:
+    st.success("File uploaded successfully!")
 
-        # Save to buffer
-        buffer = BytesIO()
-        final_doc.save(buffer)
-        buffer.seek(0)
+    # Process file
+    stripped_doc = strip_docx_content(uploaded_file)
+    output = save_docx_to_bytes(stripped_doc)
 
-        st.success("✅ Document formatted successfully!")
-        st.download_button("📥 Download Formatted Word Document", buffer, file_name="formatted.docx")
-
-if __name__ == "__main__":
-    main()
+    # Download button
+    st.download_button(
+        label="Download Stripped Template",
+        data=output,
+        file_name="stripped_template.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
